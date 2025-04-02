@@ -1,4 +1,4 @@
-# TODO - Style Maverick Chrome Extension
+# TODO - Vibe Styler Chrome Extension
 
 A chrome extension that lets you change the style of any page with a prompt using Google Gemini 2.5. Keeps track of changes so when you go back to the page your changes are applied.
 
@@ -57,7 +57,7 @@ A chrome extension that lets you change the style of any page with a prompt usin
 -   [x] **Background Script:** Implement messaging to send the generated CSS back to the originating content script (requires tracking tab ID).
 -   [x] **Content Script:** Implement listener to receive generated CSS from the background script.
 -   [x] **Content Script:** Develop strategy for applying the CSS:
-    -   [x] Preferred: Create a new `<style>` tag in the document's `<head>` with a specific ID (e.g., `style-maverick-injected-styles`).
+    -   [x] Preferred: Create a new `<style>` tag in the document's `<head>` with a specific ID (e.g., `style-viberstyler-injected-styles`).
     -   [x] Populate the `<style>` tag with the received CSS.
     -   [x] Handle updates: If new styles are generated, replace the content of the existing extension's `<style>` tag.
 -   [x] **Content Script:** Implement a mechanism to *remove* applied styles (e.g., for a revert function or when disabling).
