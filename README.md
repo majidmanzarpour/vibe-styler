@@ -2,6 +2,8 @@
 
 Change the style of any webpage using AI prompts with the power of Gemini 2.5 Pro!
 
+Demo: https://x.com/majidmanzarpour/status/1907275311798206561
+
 This Chrome extension allows you to:
 *   Enter a text prompt describing the style changes you want (e.g., "make the background dark blue and text light gray", "apply a cyberpunk theme", "use Star Wars inspired colors and fonts").
 *   Utilize the **Google Gemini 2.5 Pro model** with its large context window to analyze the entire page structure and existing styles for more accurate and context-aware results.
