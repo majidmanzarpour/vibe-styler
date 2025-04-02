@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vibe Styler</title>
+    <link rel="stylesheet" href="popup.css">
+    <style>
+        body {
+            width: 300px;
+            min-height: 150px; /* Adjust as needed */
+            padding: 10px;
+            font-family: sans-serif;
+        }
+        textarea {
+            width: 95%;
+            height: 60px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 8px 15px;
+        }
+        #status-message {
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block; /* Initially hidden */
+            margin-left: 10px;
+            vertical-align: middle;
+            display: none; /* Hide by default */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #current-url {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 15px;
+            word-wrap: break-word;
+        }
+        #options-link {
+             display: block;
+             margin-top: 10px;
+             font-size: 0.8em;
+        }
+    </style>
+</head>
+<body>
+    <h1>Vibe Styler</h1>
+    <textarea id="prompt-input" placeholder="Enter style prompt (e.g., 'make background dark gray and text white')"></textarea>
+    <div>
+        <button id="apply-button">Apply Styles</button>
+        <button id="revert-button" style="margin-left: 5px;">Revert Styles</button>
+        <div class="loader" id="loading-indicator"></div>
+    </div>
+    <div id="status-message"></div>
+    <div id="current-url">Loading URL...</div>
+    <a href="#" id="options-link">Options</a>
+
+    <script src="popup.js"></script>
+</body>
+</html> 
