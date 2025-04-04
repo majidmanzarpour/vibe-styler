@@ -49,19 +49,40 @@
              margin-top: 10px;
              font-size: 0.8em;
         }
+        .auto-applied-message {
+            display: none;
+        }
     </style>
 </head>
 <body>
-    <h1>Vibe Styler</h1>
-    <textarea id="prompt-input" placeholder="Enter style prompt (e.g., 'make background dark gray and text white')"></textarea>
-    <div>
-        <button id="apply-button">Apply Styles</button>
-        <button id="revert-button" style="margin-left: 5px;">Revert Styles</button>
-        <div class="loader" id="loading-indicator"></div>
+    <div class="header">
+        <img src="../assets/icon48.png" alt="Logo" class="logo">
+        <h1>Vibe Styler</h1>
     </div>
-    <div id="status-message"></div>
-    <div id="current-url">Loading URL...</div>
-    <a href="#" id="options-link">Options</a>
+
+    <div id="current-url">Loading...</div>
+
+    <div class="input-group">
+        <textarea id="prompt-input" placeholder="e.g., 'make background dark grey', 'apply a cyberpunk theme', 'increase font size'"></textarea>
+        <button id="apply-button" disabled>Apply Styles</button>
+    </div>
+
+    <div class="style-manager">
+        <label for="style-select">Active Style:</label>
+        <select id="style-select" name="styles">
+            <option value="loading" disabled>Loading styles...</option>
+        </select>
+    </div>
+
+    <div class="status-area">
+        <span id="status-message">Enter a prompt and click Apply.</span>
+        <div id="loading-indicator" class="loader" style="display: none;"></div>
+    </div>
+
+    <div class="button-group">
+        <button id="revert-button" disabled>Delete Styles</button>
+        <a href="#" id="options-link" class="options-link">Options</a>
+    </div>
 
     <script src="popup.js"></script>
 </body>

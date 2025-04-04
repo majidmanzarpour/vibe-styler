@@ -1,1 +1,224 @@
-/* Basic styles for the popup - more can be added later */
+/* Vibe Styler Popup Styles */
+:root {
+  --primary-color: #6a11cb; /* Deep purple */
+  --secondary-color: #2575fc; /* Vibrant blue */
+  --accent-color: #f7971e; /* Orange accent */
+  --text-color: #ffffff;
+  --background-start: #1a1a2e; /* Dark blue-purple */
+  --background-end: #16213e; /* Darker blue */
+  --input-bg: rgba(255, 255, 255, 0.1);
+  --input-border: rgba(255, 255, 255, 0.2);
+  --button-hover-bg: rgba(255, 255, 255, 0.15);
+  --success-color: #4caf50;
+  --error-color: #f44336;
+}
+
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  width: 380px;
+  padding: 15px 20px;
+  background: linear-gradient(
+    135deg,
+    var(--background-start),
+    var(--background-end)
+  );
+  color: var(--text-color);
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.logo {
+  width: 32px;
+  height: 32px;
+  margin-right: 10px;
+}
+
+h1 {
+  font-size: 1.4em;
+  margin: 0;
+  font-weight: 600;
+  color: #f0f0f0; /* Slightly lighter for heading */
+}
+
+#current-url {
+  font-size: 0.85em;
+  color: #b0b0d0; /* Lighter purple-ish gray */
+  margin-bottom: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.auto-applied-message {
+  font-size: 0.85em;
+  color: #c0c0e0; /* Changed from success-color to a neutral info color */
+  background-color: rgba(0, 0, 0, 0.1); /* Subtle dark background */
+  padding: 6px 10px; /* Adjusted padding slightly */
+  border-radius: 4px;
+  margin-bottom: 10px;
+  text-align: left; /* Align left for prompt text */
+  border: 1px solid var(--input-border); /* Add a subtle border */
+  word-wrap: break-word; /* Ensure long prompts wrap */
+}
+
+.input-group {
+  margin-bottom: 15px;
+}
+
+textarea#prompt-input {
+  width: 100%;
+  height: 70px;
+  padding: 10px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  border: 1px solid var(--input-border);
+  background-color: var(--input-bg);
+  color: var(--text-color);
+  font-size: 0.95em;
+  resize: vertical; /* Allow vertical resize */
+}
+
+textarea#prompt-input::placeholder {
+  color: #a0a0c0; /* Lighter placeholder text */
+}
+
+button {
+  padding: 10px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.95em;
+  font-weight: 500;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button#apply-button {
+  background-color: var(--primary-color);
+  color: var(--text-color);
+  width: 100%;
+}
+
+button#apply-button:not(:disabled):hover {
+  background-color: #7b1fe5; /* Slightly lighter purple */
+  transform: translateY(-1px);
+}
+
+/* Style Manager Section */
+.style-manager {
+  margin-top: 15px;
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+  border: 1px solid var(--input-border);
+}
+
+.style-manager label {
+  display: block;
+  font-size: 0.9em;
+  margin-bottom: 8px;
+  color: #c0c0e0;
+  font-weight: 500;
+}
+
+select#style-select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--input-border);
+  background-color: var(--input-bg);
+  color: var(--text-color);
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+select#style-select:focus {
+  outline: none;
+  border-color: var(--secondary-color);
+  box-shadow: 0 0 0 2px rgba(37, 117, 252, 0.3);
+}
+/* End Style Manager Section */
+
+.status-area {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 15px;
+  min-height: 20px; /* Ensure space even when empty */
+}
+
+#status-message {
+  font-size: 0.9em;
+  color: #c0c0e0;
+  flex-grow: 1;
+  margin-right: 10px;
+}
+
+#status-message[style*="color: green"] {
+  color: var(--success-color);
+}
+
+#status-message[style*="color: red"] {
+  color: var(--error-color);
+}
+
+.loader {
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top: 3px solid var(--secondary-color);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  animation: spin 1s linear infinite;
+  display: inline-block; /* Keep using inline-block for flow */
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.button-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+button#revert-button {
+  background-color: transparent;
+  border: 1px solid var(--input-border);
+  color: #c0c0e0;
+}
+
+button#revert-button:not(:disabled):hover {
+  background-color: var(--button-hover-bg);
+  border-color: #fff;
+  color: #fff;
+}
+
+a.options-link {
+  color: var(--secondary-color);
+  text-decoration: none;
+  font-size: 0.9em;
+  transition: color 0.2s ease;
+}
+
+a.options-link:hover {
+  color: #5ca3ff; /* Lighter blue */
+  text-decoration: underline;
+}

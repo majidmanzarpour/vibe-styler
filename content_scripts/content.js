@@ -12,7 +12,7 @@ try {
     if (request.type === "INJECT_CSS") {
       console.log("Received CSS to inject:", request.css);
       const cssToInject = request.css;
-      const styleId = "style-maverick-injected-styles";
+      const styleId = "vibe-styler-injected-styles";
 
       // Find existing style tag added by this extension, or create a new one
       let styleElement = document.getElementById(styleId);
@@ -34,7 +34,7 @@ try {
       console.log("[ContentScript] Handled INJECT_CSS.");
     } else if (request.type === "REMOVE_STYLES") {
       console.log("Request received to remove injected styles.");
-      const styleId = "style-maverick-injected-styles";
+      const styleId = "vibe-styler-injected-styles";
       const styleElement = document.getElementById(styleId);
       if (styleElement) {
         styleElement.remove();

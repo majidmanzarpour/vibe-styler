@@ -57,89 +57,162 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const allStyles = result[storageKey];
-      if (!allStyles || Object.keys(allStyles).length === 0) {
+      const allSitesData = result[storageKey]; // Use the correct key name
+      if (!allSitesData || Object.keys(allSitesData).length === 0) {
         stylesListDiv.innerHTML = "<p>No styles saved yet.</p>";
         return;
       }
 
       stylesListDiv.innerHTML = ""; // Clear loading message
-      const ul = document.createElement("ul");
-      ul.style.listStyle = "none";
-      ul.style.padding = "0";
+      const siteListUl = document.createElement("ul");
+      siteListUl.style.listStyle = "none";
+      siteListUl.style.padding = "0";
 
-      for (const url in allStyles) {
-        if (allStyles.hasOwnProperty(url)) {
-          const styleData = allStyles[url];
-          const li = document.createElement("li");
-          li.style.marginBottom = "10px";
-          li.style.padding = "10px";
-          li.style.border = "1px solid #ccc";
-          li.style.borderRadius = "4px";
+      for (const url in allSitesData) {
+        if (allSitesData.hasOwnProperty(url)) {
+          const siteData = allSitesData[url]; // This now contains {styles, activeStyleId}
+          const siteLi = document.createElement("li");
+          siteLi.style.marginBottom = "15px"; // Increased margin for site block
+          siteLi.style.padding = "10px";
+          siteLi.style.border = "1px solid #ccc";
+          siteLi.style.borderRadius = "4px";
+
+          const headerDiv = document.createElement("div");
+          headerDiv.style.display = "flex";
+          headerDiv.style.justifyContent = "space-between";
+          headerDiv.style.alignItems = "center";
+          headerDiv.style.marginBottom = "8px";
 
           const urlSpan = document.createElement("span");
           urlSpan.textContent = url;
           urlSpan.style.fontWeight = "bold";
-          urlSpan.style.display = "block";
-          urlSpan.style.marginBottom = "5px";
 
-          const promptSpan = document.createElement("span");
-          promptSpan.textContent = `Prompt: "${styleData.userPrompt}"`;
-          promptSpan.style.display = "block";
-          promptSpan.style.fontSize = "0.9em";
-          promptSpan.style.color = "#555";
+          const deleteAllButton = document.createElement("button");
+          deleteAllButton.textContent = "Delete All for Site";
+          deleteAllButton.style.marginLeft = "10px";
+          deleteAllButton.style.color = "red";
+          deleteAllButton.style.cursor = "pointer";
+          deleteAllButton.dataset.url = url; // Store URL on button
 
-          const deleteButton = document.createElement("button");
-          deleteButton.textContent = "Delete";
-          deleteButton.style.marginLeft = "10px";
-          deleteButton.style.color = "red";
-          deleteButton.style.cursor = "pointer";
-          deleteButton.dataset.url = url; // Store URL on button for easy access
-
-          deleteButton.addEventListener("click", (event) => {
+          deleteAllButton.addEventListener("click", (event) => {
             const urlToDelete = event.target.dataset.url;
             if (
               confirm(
-                `Are you sure you want to delete styles for ${urlToDelete}?`
+                `Are you sure you want to delete ALL styles for ${urlToDelete}?`
               )
             ) {
-              deleteSingleStyle(urlToDelete);
+              // Send message to background instead of deleting directly
+              chrome.runtime.sendMessage(
+                { type: "DELETE_SITE_STYLES", url: urlToDelete, tabId: null },
+                (response) => {
+                  // tabId is null here as we don't have a specific tab context,
+                  // background should handle gracefully or ignore the page style removal part
+                  if (chrome.runtime.lastError) {
+                    console.error(
+                      "Error sending DELETE_SITE_STYLES from options:",
+                      chrome.runtime.lastError
+                    );
+                    alert(
+                      `Error deleting styles: ${chrome.runtime.lastError.message}`
+                    );
+                  } else {
+                    console.log(
+                      "Response from background DELETE_SITE_STYLES:",
+                      response
+                    );
+                    alert(response?.status || "Deletion request sent.");
+                    loadStoredStyles(); // Refresh list after potential deletion
+                  }
+                }
+              );
+              // deleteAllStylesForSite(urlToDelete); // Remove direct deletion
             }
           });
-          li.appendChild(urlSpan);
-          li.appendChild(promptSpan);
-          li.appendChild(deleteButton);
-          ul.appendChild(li);
+
+          headerDiv.appendChild(urlSpan);
+          headerDiv.appendChild(deleteAllButton);
+          siteLi.appendChild(headerDiv);
+
+          // List individual styles for the site
+          if (siteData.styles && siteData.styles.length > 0) {
+            const stylesUl = document.createElement("ul");
+            stylesUl.style.listStyle = "none";
+            stylesUl.style.paddingLeft = "20px"; // Indent styles
+            stylesUl.style.marginTop = "5px";
+
+            siteData.styles.forEach((style) => {
+              const styleLi = document.createElement("li");
+              styleLi.style.padding = "5px 0";
+              styleLi.style.borderTop = "1px dashed #eee"; // Separator
+
+              const promptSpan = document.createElement("span");
+              promptSpan.textContent = `Prompt: "${style.prompt}"`;
+              promptSpan.style.display = "block";
+              promptSpan.style.fontSize = "0.9em";
+              promptSpan.style.color = "#555";
+
+              // Display if this style is active
+              if (style.id === siteData.activeStyleId) {
+                const activeSpan = document.createElement("span");
+                activeSpan.textContent = " (Active)";
+                activeSpan.style.color = "green";
+                activeSpan.style.fontWeight = "bold";
+                activeSpan.style.fontSize = "0.8em";
+                promptSpan.appendChild(activeSpan);
+              }
+
+              // TODO: Add button to delete individual style?
+              // const deleteSingleButton = document.createElement("button");
+              // deleteSingleButton.textContent = "Delete Style";
+              // deleteSingleButton.dataset.url = url;
+              // deleteSingleButton.dataset.styleId = style.id;
+              // ... add listener ...
+
+              styleLi.appendChild(promptSpan);
+              // styleLi.appendChild(deleteSingleButton);
+              stylesUl.appendChild(styleLi);
+            });
+            siteLi.appendChild(stylesUl);
+          } else {
+            const noStylesPara = document.createElement("p");
+            noStylesPara.textContent =
+              "No specific styles saved for this site yet.";
+            noStylesPara.style.marginLeft = "20px";
+            noStylesPara.style.fontSize = "0.9em";
+            siteLi.appendChild(noStylesPara);
+          }
+
+          siteListUl.appendChild(siteLi);
         }
       }
-      stylesListDiv.appendChild(ul);
+      stylesListDiv.appendChild(siteListUl);
     });
   }
 
-  // --- Function to delete a single style entry ---
-  function deleteSingleStyle(urlToDelete) {
+  // --- Function to delete all styles for a specific site ---
+  function deleteAllStylesForSite(urlToDelete) {
     chrome.storage.local.get([storageKey], (result) => {
       if (chrome.runtime.lastError) {
         console.error(
           "Error getting styles before deletion:",
           chrome.runtime.lastError
         );
-        alert("Error deleting style.");
+        alert("Error deleting site styles.");
         return;
       }
-      const allStyles = result[storageKey] || {};
-      if (allStyles[urlToDelete]) {
-        delete allStyles[urlToDelete];
-        chrome.storage.local.set({ [storageKey]: allStyles }, () => {
+      let allSitesData = result[storageKey] || {};
+      if (allSitesData[urlToDelete]) {
+        delete allSitesData[urlToDelete]; // Remove the entire entry for the URL
+        chrome.storage.local.set({ [storageKey]: allSitesData }, () => {
           if (chrome.runtime.lastError) {
             console.error(
-              "Error saving styles after deletion:",
+              "Error saving styles after site deletion:",
               chrome.runtime.lastError
             );
-            alert("Error deleting style.");
+            alert("Error deleting site styles.");
           } else {
-            console.log(`Deleted styles for ${urlToDelete}`);
-            alert(`Styles for ${urlToDelete} deleted.`);
+            console.log(`Deleted all styles for ${urlToDelete}`);
+            alert(`All styles for ${urlToDelete} deleted.`);
             loadStoredStyles(); // Refresh the list
           }
         });

@@ -38,13 +38,17 @@ Generated CSS:
 }
 
 // Helper function to send final status update back to any listening popups/options pages
-function sendFinalStatusUpdate(success, message) {
-  console.log(`Sending final status: success=${success}, message='${message}'`);
+function sendFinalStatusUpdate(success, message, prompt = null, id = null) {
+  console.log(
+    `Sending final status: success=${success}, message='${message}', prompt='${prompt}', id=${id}`
+  );
   chrome.runtime
     .sendMessage({
       type: "FINAL_STATUS",
       success: success,
       status: message,
+      prompt: prompt,
+      id: id,
     })
     .catch((error) => {
       // Ignore errors, likely means popup/options page isn't open
@@ -57,6 +61,16 @@ function sendFinalStatusUpdate(success, message) {
         console.warn("Error sending final status update:", error);
       }
     });
+}
+
+// Helper function to get domain from URL
+function getDomainFromUrl(url) {
+  try {
+    return new URL(url).hostname;
+  } catch (e) {
+    console.warn("Could not parse URL to get domain:", url, e);
+    return null;
+  }
 }
 
 // Listener for messages from popup or content scripts
@@ -242,6 +256,142 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                           "/* Error: Could not parse Gemini response */";
                       }
                     }
+
+                    // --- Refined Validity Check ---
+                    let isValidCss = false;
+                    const knownErrorPrefixes = [
+                      "/* Unable to process request */",
+                      "/* Gemini API Error:",
+                      "/* Error: Could not parse Gemini response */",
+                      "/* Error: Exception while parsing Gemini response */",
+                    ];
+
+                    if (generatedCss) {
+                      isValidCss = !knownErrorPrefixes.some((prefix) =>
+                        generatedCss.startsWith(prefix)
+                      );
+                    }
+                    // --- End Refined Check ---
+
+                    // Proceed only if CSS is considered valid
+                    if (isValidCss) {
+                      // --- Existing logic to save and inject ---
+                      const storageKey = "vibeStylerStyles";
+                      const newStyleId = Date.now();
+                      const newStyle = {
+                        id: newStyleId,
+                        prompt: userPrompt,
+                        css: generatedCss,
+                      };
+
+                      console.log(
+                        `[Apply] Generated new style for URL ${url}:`,
+                        newStyle
+                      );
+
+                      // Get current data for all sites
+                      chrome.storage.local.get([storageKey], (result) => {
+                        if (chrome.runtime.lastError) {
+                          console.error(
+                            "[Apply] Error getting storage before saving:",
+                            chrome.runtime.lastError
+                          );
+                          sendFinalStatusUpdate(
+                            false,
+                            `Storage Error: ${chrome.runtime.lastError.message}`
+                          );
+                          return;
+                        }
+
+                        let allSitesData = result[storageKey] || {};
+                        let siteData = allSitesData[url] || {
+                          styles: [],
+                          activeStyleId: null,
+                        };
+
+                        // Add new style and set as active
+                        siteData.styles.push(newStyle);
+                        siteData.activeStyleId = newStyleId;
+                        allSitesData[url] = siteData; // Update data for this URL
+
+                        // Save updated data back
+                        chrome.storage.local.set(
+                          { [storageKey]: allSitesData },
+                          () => {
+                            if (chrome.runtime.lastError) {
+                              console.error(
+                                "[Apply] Error saving new style:",
+                                chrome.runtime.lastError
+                              );
+                              sendFinalStatusUpdate(
+                                false,
+                                `Storage Error: ${chrome.runtime.lastError.message}`
+                              );
+                            } else {
+                              console.log(
+                                `[Apply] Successfully saved new style ${newStyleId} for ${url}`
+                              );
+
+                              // Ensure content script is running and send INJECT_CSS
+                              console.log(
+                                `[Apply] Ensuring content script and sending INJECT_CSS for tab ${tabId}`
+                              );
+                              chrome.scripting.executeScript(
+                                {
+                                  target: { tabId: tabId },
+                                  files: ["content_scripts/content.js"],
+                                },
+                                () => {
+                                  if (chrome.runtime.lastError) {
+                                    console.warn(
+                                      `[Apply] executeScript warning (non-fatal): ${chrome.runtime.lastError.message}`
+                                    );
+                                  }
+                                  // Now send the INJECT_CSS message
+                                  chrome.tabs.sendMessage(
+                                    tabId,
+                                    { type: "INJECT_CSS", css: generatedCss },
+                                    (response) => {
+                                      if (chrome.runtime.lastError) {
+                                        console.warn(
+                                          `[Apply] INJECT_CSS message failed: ${chrome.runtime.lastError.message}`
+                                        );
+                                        sendFinalStatusUpdate(
+                                          false,
+                                          `Storage OK, but CSS injection failed: ${chrome.runtime.lastError.message}`
+                                        );
+                                      } else {
+                                        console.log(
+                                          `[Apply] Content script acknowledged INJECT_CSS. Response:`,
+                                          response
+                                        );
+                                        // Send success status including the new prompt and ID
+                                        sendFinalStatusUpdate(
+                                          true,
+                                          "New style applied and saved!",
+                                          userPrompt,
+                                          newStyleId
+                                        );
+                                      }
+                                    }
+                                  );
+                                }
+                              );
+                            }
+                          }
+                        ); // End storage.local.set
+                      }); // End storage.local.get
+                    } else {
+                      // Handle known errors or empty CSS
+                      console.log(
+                        "[Apply] Gemini returned an error comment or empty CSS, not applying. CSS:",
+                        generatedCss
+                      );
+                      sendFinalStatusUpdate(
+                        false,
+                        generatedCss || "Error: Empty CSS generated."
+                      );
+                    }
                   } catch (parseError) {
                     console.error("Error parsing Gemini response:", parseError);
                     generatedCss =
@@ -256,104 +406,128 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     // Potentially return here if we don't want to try injecting errors?
                   }
 
-                  // --- Phase 4: Send CSS to Content Script ---
-                  if (generatedCss && !generatedCss.startsWith("/* Error:")) {
-                    chrome.tabs.sendMessage(
-                      tabId,
-                      { type: "INJECT_CSS", css: generatedCss },
-                      (response) => {
-                        if (chrome.runtime.lastError) {
-                          console.error(
-                            "Error sending INJECT_CSS message:",
-                            chrome.runtime.lastError.message
-                          );
-                          sendFinalStatusUpdate(
-                            false,
-                            `Error applying styles: ${chrome.runtime.lastError.message}`
-                          );
-                        } else {
-                          console.log(
-                            "Response from content script after injecting CSS:",
-                            response
-                          );
-                          // --- Phase 5: Save Styles ---
-                          if (
-                            response &&
-                            response.status === "CSS injected successfully."
-                          ) {
-                            const storageKey = "vibeStylerStyles";
-                            chrome.storage.local.get([storageKey], (result) => {
-                              if (chrome.runtime.lastError) {
-                                console.error(
-                                  "Error getting styles from storage:",
-                                  chrome.runtime.lastError
-                                );
-                                // Don't block completion, but log error
-                                sendFinalStatusUpdate(
-                                  false,
-                                  "Error: Failed to save styles to storage."
-                                );
-                              } else {
-                                const allStyles = result[storageKey] || {};
-                                allStyles[url] = {
-                                  // url was captured during content extraction
-                                  userPrompt: userPrompt,
-                                  generatedCss: generatedCss,
-                                };
-                                chrome.storage.local.set(
-                                  { [storageKey]: allStyles },
-                                  () => {
+                  if (generatedCss && !generatedCss.startsWith("/*")) {
+                    // --- Proceed only if CSS is valid ---
+                    const storageKey = "vibeStylerStyles";
+                    const newStyleId = Date.now();
+                    const newStyle = {
+                      id: newStyleId,
+                      prompt: userPrompt,
+                      css: generatedCss,
+                    };
+
+                    console.log(
+                      `[Apply] Generated new style for URL ${url}:`,
+                      newStyle
+                    );
+
+                    // Get current data for all sites
+                    chrome.storage.local.get([storageKey], (result) => {
+                      if (chrome.runtime.lastError) {
+                        console.error(
+                          "[Apply] Error getting storage before saving:",
+                          chrome.runtime.lastError
+                        );
+                        sendFinalStatusUpdate(
+                          false,
+                          `Storage Error: ${chrome.runtime.lastError.message}`
+                        );
+                        return;
+                      }
+
+                      let allSitesData = result[storageKey] || {};
+                      let siteData = allSitesData[url] || {
+                        styles: [],
+                        activeStyleId: null,
+                      };
+
+                      // Add new style and set as active
+                      siteData.styles.push(newStyle);
+                      siteData.activeStyleId = newStyleId;
+                      allSitesData[url] = siteData; // Update data for this URL
+
+                      // Save updated data back
+                      chrome.storage.local.set(
+                        { [storageKey]: allSitesData },
+                        () => {
+                          if (chrome.runtime.lastError) {
+                            console.error(
+                              "[Apply] Error saving new style:",
+                              chrome.runtime.lastError
+                            );
+                            sendFinalStatusUpdate(
+                              false,
+                              `Storage Error: ${chrome.runtime.lastError.message}`
+                            );
+                          } else {
+                            console.log(
+                              `[Apply] Successfully saved new style ${newStyleId} for ${url}`
+                            );
+
+                            // Ensure content script is running and send INJECT_CSS
+                            console.log(
+                              `[Apply] Ensuring content script and sending INJECT_CSS for tab ${tabId}`
+                            );
+                            chrome.scripting.executeScript(
+                              {
+                                target: { tabId: tabId },
+                                files: ["content_scripts/content.js"],
+                              },
+                              () => {
+                                if (chrome.runtime.lastError) {
+                                  console.warn(
+                                    `[Apply] executeScript warning (non-fatal): ${chrome.runtime.lastError.message}`
+                                  );
+                                }
+                                // Now send the INJECT_CSS message
+                                chrome.tabs.sendMessage(
+                                  tabId,
+                                  { type: "INJECT_CSS", css: generatedCss },
+                                  (response) => {
                                     if (chrome.runtime.lastError) {
-                                      console.error(
-                                        "Error saving styles to storage:",
-                                        chrome.runtime.lastError
+                                      console.warn(
+                                        `[Apply] INJECT_CSS message failed: ${chrome.runtime.lastError.message}`
                                       );
                                       sendFinalStatusUpdate(
                                         false,
-                                        "Error: Failed to save styles to storage."
+                                        `Storage OK, but CSS injection failed: ${chrome.runtime.lastError.message}`
                                       );
                                     } else {
                                       console.log(
-                                        `Styles saved for URL: ${url}`
+                                        `[Apply] Content script acknowledged INJECT_CSS. Response:`,
+                                        response
                                       );
+                                      // Send success status including the new prompt and ID
                                       sendFinalStatusUpdate(
                                         true,
-                                        "Styles applied and saved successfully!"
+                                        "New style applied and saved!",
+                                        userPrompt,
+                                        newStyleId
                                       );
                                     }
                                   }
                                 );
                               }
-                            });
-                          } else {
-                            // If content script didn't confirm injection
-                            sendFinalStatusUpdate(
-                              false,
-                              "Content script did not confirm style injection."
                             );
                           }
-                          // ---------------------------
                         }
-                      }
-                    );
+                      ); // End storage.local.set
+                    }); // End storage.local.get
                   } else {
                     console.log(
-                      "Skipping CSS injection due to empty or error response from LLM."
+                      "Gemini returned an error comment or empty CSS, not applying."
                     );
-                    // TODO: Send failure status back to popup (explaining the error if possible)
                     sendFinalStatusUpdate(
                       false,
-                      generatedCss || "No CSS generated."
+                      generatedCss || "Error: Empty CSS generated."
                     );
                   }
-                  // ------------------------------------------
-                } catch (error) {
-                  console.error("Error calling Gemini API:", error);
+                } catch (fetchError) {
+                  console.error("Error fetching from Gemini API:", fetchError);
                   sendFinalStatusUpdate(
                     false,
-                    `Error during API call/processing: ${error.message}`
+                    `API Fetch Error: ${fetchError.message}`
                   );
-                  // TODO: Send error details back to popup
                 }
               });
               // -------------------------------------
@@ -377,6 +551,358 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // We will handle the actual result asynchronously after extraction and LLM call
     sendResponse({ status: "Received prompt. Processing..." });
     return true; // Indicate that we will send a response asynchronously later
+  } else if (request.type === "CLEAR_ACTIVE_STYLE") {
+    const url = request.url;
+    const tabId = request.tabId;
+    console.log(`[Background] Received CLEAR_ACTIVE_STYLE for URL: ${url}`);
+
+    if (!url || !tabId) {
+      console.error(
+        `[Background] Invalid arguments for CLEAR_ACTIVE_STYLE`,
+        request
+      );
+      sendResponse({ status: "Error: Missing URL or TabID." });
+      return false;
+    }
+
+    const storageKey = "vibeStylerStyles";
+    chrome.storage.local.get([storageKey], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error(
+          "[ClearActive] Error getting storage:",
+          chrome.runtime.lastError
+        );
+        sendResponse({
+          status: `Storage Get Error: ${chrome.runtime.lastError.message}`,
+        });
+        return;
+      }
+
+      let allSitesData = result[storageKey] || {};
+      let siteData = allSitesData[url];
+
+      if (siteData && siteData.activeStyleId !== null) {
+        console.log(`[ClearActive] Clearing active style ID for ${url}`);
+        siteData.activeStyleId = null; // Set active style to null
+        allSitesData[url] = siteData; // Update site data
+
+        chrome.storage.local.set({ [storageKey]: allSitesData }, () => {
+          if (chrome.runtime.lastError) {
+            console.error(
+              "[ClearActive] Error setting storage:",
+              chrome.runtime.lastError
+            );
+            sendResponse({
+              status: `Storage Set Error: ${chrome.runtime.lastError.message}`,
+            });
+          } else {
+            console.log(
+              `[ClearActive] Successfully cleared active style for ${url}`
+            );
+            sendResponse({ status: "Active style cleared." });
+
+            // Ensure content script is running and trigger REMOVE_STYLES
+            console.log(
+              `[ClearActive] Ensuring content script and triggering REMOVE_STYLES in tab ${tabId}`
+            );
+            chrome.scripting.executeScript(
+              {
+                target: { tabId: tabId },
+                files: ["content_scripts/content.js"],
+              },
+              () => {
+                if (chrome.runtime.lastError) {
+                  console.warn(
+                    `[ClearActive] executeScript warning (non-fatal): ${chrome.runtime.lastError.message}`
+                  );
+                }
+                // Now send the message
+                chrome.tabs.sendMessage(
+                  tabId,
+                  { type: "REMOVE_STYLES" },
+                  (response) => {
+                    if (chrome.runtime.lastError) {
+                      console.warn(
+                        `[ClearActive] REMOVE_STYLES message failed: ${chrome.runtime.lastError.message}`
+                      );
+                    } else {
+                      console.log(
+                        "[ClearActive] Content script acknowledged REMOVE_STYLES."
+                      );
+                    }
+                  }
+                );
+              }
+            );
+          }
+        });
+      } else {
+        console.log(`[ClearActive] No active style was set for ${url}`);
+        sendResponse({ status: "No active style to clear." });
+      }
+    });
+
+    return true; // Async response
+  } else if (request.type === "SET_ACTIVE_STYLE") {
+    const { url, tabId, styleId } = request;
+    console.log(
+      `[SetActive] Request received for URL: ${url}, Style ID: ${styleId}`
+    );
+
+    if (!url || !tabId || styleId === undefined) {
+      // styleId could be null
+      console.error("[SetActive] Invalid arguments:", request);
+      sendResponse({ status: "Error: Missing URL, TabID, or StyleID." });
+      return false;
+    }
+
+    const storageKey = "vibeStylerStyles";
+    chrome.storage.local.get([storageKey], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error(
+          "[SetActive] Error getting storage:",
+          chrome.runtime.lastError
+        );
+        sendResponse({
+          status: `Storage Get Error: ${chrome.runtime.lastError.message}`,
+        });
+        return;
+      }
+
+      let allSitesData = result[storageKey] || {};
+      let siteData = allSitesData[url];
+
+      if (!siteData || !siteData.styles || siteData.styles.length === 0) {
+        console.warn(`[SetActive] No site data or styles found for ${url}`);
+        sendResponse({ status: "Error: No styles saved for this URL." });
+        return;
+      }
+
+      let styleToApply = null;
+      let promptToDisplay = null;
+      if (styleId === null) {
+        // User selected "No Style"
+        console.log(`[SetActive] Setting active style to null for ${url}`);
+        siteData.activeStyleId = null;
+        promptToDisplay = null; // No prompt for "No Style"
+      } else {
+        // Find the style object matching the requested ID
+        styleToApply = siteData.styles.find((s) => s.id === styleId);
+        if (!styleToApply) {
+          console.error(
+            `[SetActive] Style ID ${styleId} not found for URL ${url}`
+          );
+          sendResponse({ status: `Error: Style ID ${styleId} not found.` });
+          return;
+        }
+        console.log(
+          `[SetActive] Setting active style to ${styleId} for ${url}`
+        );
+        siteData.activeStyleId = styleId;
+        promptToDisplay = styleToApply.prompt; // Get prompt for display
+      }
+
+      // Update the site data
+      allSitesData[url] = siteData;
+
+      // Save the updated activeStyleId
+      chrome.storage.local.set({ [storageKey]: allSitesData }, () => {
+        if (chrome.runtime.lastError) {
+          console.error(
+            "[SetActive] Error setting storage:",
+            chrome.runtime.lastError
+          );
+          sendResponse({
+            status: `Storage Set Error: ${chrome.runtime.lastError.message}`,
+          });
+          return;
+        }
+
+        console.log(
+          `[SetActive] Successfully updated active style ID for ${url}`
+        );
+
+        // Inject the new CSS or remove existing styles
+        if (styleToApply) {
+          console.log(
+            `[SetActive] Ensuring content script and injecting CSS for style ${styleId}`
+          );
+          // Ensure content script is present first
+          chrome.scripting.executeScript(
+            {
+              target: { tabId: tabId },
+              files: ["content_scripts/content.js"],
+            },
+            () => {
+              if (chrome.runtime.lastError) {
+                console.warn(
+                  `[SetActive] executeScript warning (non-fatal): ${chrome.runtime.lastError.message}`
+                );
+              }
+              // Now send INJECT_CSS message to content script
+              console.log(
+                `[SetActive] Sending INJECT_CSS to content script for style ${styleId}`
+              );
+              chrome.tabs.sendMessage(
+                tabId,
+                { type: "INJECT_CSS", css: styleToApply.css },
+                (response) => {
+                  if (chrome.runtime.lastError) {
+                    console.warn(
+                      `[SetActive] INJECT_CSS message failed: ${chrome.runtime.lastError.message}`
+                    );
+                    sendResponse({
+                      status: "Active style set, but injection failed.",
+                    });
+                  } else {
+                    console.log(
+                      `[SetActive] Content script acknowledged INJECT_CSS. Response:`,
+                      response
+                    );
+                    sendResponse({
+                      status: "Active style changed successfully.",
+                      newPrompt: promptToDisplay,
+                    });
+                  }
+                }
+              );
+            }
+          );
+        } else {
+          // "No Style" selected - Ensure content script and send REMOVE_STYLES
+          console.log(
+            `[SetActive] Ensuring content script and sending REMOVE_STYLES for tab ${tabId}`
+          );
+          chrome.scripting.executeScript(
+            {
+              target: { tabId: tabId },
+              files: ["content_scripts/content.js"],
+            },
+            () => {
+              if (chrome.runtime.lastError) {
+                console.warn(
+                  `[SetActive] executeScript warning (non-fatal): ${chrome.runtime.lastError.message}`
+                );
+              }
+              // Now send the message
+              chrome.tabs.sendMessage(
+                tabId,
+                { type: "REMOVE_STYLES" },
+                (removeResponse) => {
+                  // Check lastError FIRST
+                  if (chrome.runtime.lastError) {
+                    console.warn(
+                      `[SetActive] REMOVE_STYLES message failed (non-fatal for storage update): ${chrome.runtime.lastError.message}`
+                    );
+                    // Still send success as storage update succeeded
+                    sendResponse({
+                      status:
+                        "Active style cleared. (CSS removal status uncertain)",
+                      newPrompt: null,
+                    });
+                  } else {
+                    console.log(
+                      `[SetActive] REMOVE_STYLES successful. Response:`,
+                      removeResponse
+                    );
+                    sendResponse({
+                      status: "Active style cleared.",
+                      newPrompt: null,
+                    });
+                  }
+                }
+              );
+            }
+          );
+        }
+      }); // End storage set
+    }); // End storage get
+
+    return true; // Async response
+  } else if (request.type === "DELETE_SITE_STYLES") {
+    const { url, tabId } = request; // Get URL and TabID
+    console.log(`[Background] Received DELETE_SITE_STYLES for URL: ${url}`);
+
+    if (!url || !tabId) {
+      console.error("[DeleteSite] Invalid arguments:", request);
+      sendResponse({ status: "Error: Missing URL or TabID." });
+      return false;
+    }
+
+    const storageKey = "vibeStylerStyles";
+    chrome.storage.local.get([storageKey], (result) => {
+      if (chrome.runtime.lastError) {
+        console.error(
+          "[DeleteSite] Error getting storage:",
+          chrome.runtime.lastError
+        );
+        sendResponse({
+          status: `Storage Get Error: ${chrome.runtime.lastError.message}`,
+        });
+        return;
+      }
+
+      let allSitesData = result[storageKey] || {};
+
+      if (allSitesData[url]) {
+        console.log(`[DeleteSite] Deleting all data for URL: ${url}`);
+        delete allSitesData[url]; // Delete the entire entry for the site
+
+        chrome.storage.local.set({ [storageKey]: allSitesData }, () => {
+          if (chrome.runtime.lastError) {
+            console.error(
+              "[DeleteSite] Error setting storage after deletion:",
+              chrome.runtime.lastError
+            );
+            sendResponse({
+              status: `Storage Set Error: ${chrome.runtime.lastError.message}`,
+            });
+          } else {
+            console.log(`[DeleteSite] Successfully deleted data for ${url}`);
+            sendResponse({ status: "All styles for this site deleted." });
+            // Ensure styles are removed from the page IF a valid tabId was provided
+            if (tabId) {
+              console.log(
+                `[DeleteSite] Ensuring content script and sending REMOVE_STYLES to tab ${tabId}`
+              );
+              chrome.scripting.executeScript(
+                {
+                  target: { tabId: tabId },
+                  files: ["content_scripts/content.js"],
+                },
+                () => {
+                  if (chrome.runtime.lastError)
+                    console.warn(
+                      `[DeleteSite] executeScript warning: ${chrome.runtime.lastError.message}`
+                    );
+                  chrome.tabs.sendMessage(
+                    tabId,
+                    { type: "REMOVE_STYLES" },
+                    (response) => {
+                      if (chrome.runtime.lastError)
+                        console.warn(
+                          `[DeleteSite] REMOVE_STYLES failed: ${chrome.runtime.lastError.message}`
+                        );
+                      else
+                        console.log("[DeleteSite] REMOVE_STYLES acknowledged.");
+                    }
+                  );
+                }
+              );
+            } else {
+              console.log(
+                "[DeleteSite] No valid tabId provided, skipping page style removal."
+              );
+            }
+          }
+        });
+      } else {
+        console.log(`[DeleteSite] No data found for URL: ${url}`);
+        sendResponse({ status: "No styles found to delete for this site." });
+      }
+    });
+
+    return true; // Async response
   } else if (request.type === "CONTENT_EXTRACTED") {
     // This message type might be sent *from* the content script if we change the flow
     console.log(
@@ -388,7 +914,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Default case if message type isn't handled above
   // Return false if no async response is planned for this message type
-  return false;
+  if (
+    request.type !== "APPLY_STYLES" &&
+    request.type !== "CLEAR_ACTIVE_STYLE" &&
+    request.type !== "SET_ACTIVE_STYLE" &&
+    request.type !== "DELETE_SITE_STYLES"
+  ) {
+    console.log(`Unhandled message type or sync response: ${request.type}`);
+    return false;
+  }
+  // If we reached here, it means APPLY_STYLES or CLEAR_ACTIVE_STYLE was handled and returned true
 });
 
 // Listener for initial extension installation or update
@@ -397,111 +932,95 @@ chrome.runtime.onInstalled.addListener(() => {
   // Perform any first-time setup here if needed
 });
 
-// --- Phase 5: Listener for Page Loads to Reapply Styles ---
-// NEW LISTENER using webNavigation.onCompleted
+// --- Auto-Apply Styles on Navigation ---
 chrome.webNavigation.onCompleted.addListener(
   (details) => {
-    // Check if the navigation is for the main frame (frameId === 0)
-    if (details.frameId === 0) {
-      const tabId = details.tabId;
-      const url = details.url;
-      console.log(
-        `[webNavigation] Frame completed loading: ${url} (Tab ID: ${tabId})`
-      );
+    // Ignore iframes or non-http(s) pages
+    if (details.frameId !== 0 || !details.url.startsWith("http")) {
+      return;
+    }
 
-      const storageKey = "vibeStylerStyles";
+    const url = details.url;
+    const tabId = details.tabId;
+    const storageKey = "vibeStylerStyles";
 
-      chrome.storage.local.get([storageKey], (result) => {
-        if (chrome.runtime.lastError) {
-          console.error(
-            "[webNavigation] Error getting styles from storage:",
-            chrome.runtime.lastError
-          );
-          return;
-        }
+    console.log(`[webNavigation] Page completed: ${url}`);
 
-        const allStyles = result[storageKey];
-        if (allStyles && allStyles[url]) {
-          const savedStyleData = allStyles[url];
+    // Get all stored styles
+    chrome.storage.local.get([storageKey], (result) => {
+      if (chrome.runtime.lastError) {
+        console.warn(
+          `[webNavigation] Error getting storage for ${url}: ${chrome.runtime.lastError.message}`
+        );
+        return;
+      }
+
+      const allSitesData = result[storageKey] || {};
+      const siteData = allSitesData[url];
+
+      // Check if there's data and an active style for this URL
+      if (siteData && siteData.activeStyleId) {
+        const activeStyleId = siteData.activeStyleId;
+        // Find the active style object in the array
+        const activeStyle = siteData.styles.find((s) => s.id === activeStyleId);
+
+        if (activeStyle) {
           console.log(
-            `[webNavigation] Found saved styles for ${url}. Injecting...`
+            `[webNavigation] Found active style (${activeStyleId}: '${activeStyle.prompt}') for ${url}. Ensuring content script and injecting...`
           );
-          const savedCss = savedStyleData.generatedCss;
-
-          // Inject the content script first
+          // Ensure content script is injected first
           chrome.scripting.executeScript(
             {
               target: { tabId: tabId },
               files: ["content_scripts/content.js"],
             },
             () => {
-              let proceedWithMessage = true; // Assume we can proceed initially
-              // This callback runs AFTER the script injection attempt
               if (chrome.runtime.lastError) {
-                const errorMsg = chrome.runtime.lastError.message;
-                // Log the specific error message FIRST
-                console.error(
-                  `[webNavigation] executeScript failed for ${url}. Error Message: "${errorMsg}"`
+                // Non-fatal error (might already be injected)
+                console.warn(
+                  `[webNavigation] executeScript warning (non-fatal): ${chrome.runtime.lastError.message}`
                 );
-
-                // Check for specific errors we might ignore
-                const knownSafeErrors = [
-                  "Cannot access contents of url", // Trying to inject into chrome://, file:// etc.
-                  "Frame with ID", // Often means frame was closed/navigated away quickly
-                  "Cannot create item with duplicate id", // Script already injected (maybe from manifest?)
-                  "Receiving end does not exist", // Maybe from a previous injection attempt?
-                ];
-                // Check if the error message contains any of the known safe error fragments
-                if (
-                  !knownSafeErrors.some((safeError) =>
-                    errorMsg.includes(safeError)
-                  )
-                ) {
-                  // If it's an unknown or potentially problematic error, DON'T proceed
-                  proceedWithMessage = false;
-                  console.error(
-                    "[webNavigation] Halting message send due to potentially critical injection error (logged above)."
-                  );
-                }
               }
-
-              if (proceedWithMessage) {
-                // Introduce a small delay to allow the content script listener to set up
-                setTimeout(() => {
-                  console.log(
-                    `[webNavigation] Attempting to send INJECT_CSS to tab ${tabId} for URL ${url}`
-                  );
-
-                  // Send the CSS to the content script
-                  chrome.tabs.sendMessage(
-                    tabId,
-                    { type: "INJECT_CSS", css: savedCss },
-                    (response) => {
-                      if (chrome.runtime.lastError) {
-                        console.error(
-                          `[webNavigation] Error sending saved INJECT_CSS message to ${url}:`,
-                          chrome.runtime.lastError.message
-                        );
-                      } else {
-                        console.log(
-                          `[webNavigation] Successfully sent saved styles to ${url}. Response:`,
-                          response
-                        );
-                      }
-                    }
-                  );
-                }, 100); // 100ms delay - adjust if needed
-              } // else: We logged the critical error above, do nothing further
+              // Now send INJECT_CSS message to content script
+              console.log(
+                `[webNavigation] Sending INJECT_CSS to content script for ${url}`
+              );
+              chrome.tabs.sendMessage(
+                tabId,
+                { type: "INJECT_CSS", css: activeStyle.css },
+                (response) => {
+                  if (chrome.runtime.lastError) {
+                    console.warn(
+                      `[webNavigation] INJECT_CSS message failed: ${chrome.runtime.lastError.message}`
+                    );
+                  } else {
+                    console.log(
+                      `[webNavigation] Content script acknowledged INJECT_CSS for ${url}. Response:`,
+                      response
+                    );
+                  }
+                }
+              );
             }
           );
         } else {
-          console.log(`[webNavigation] No saved styles found for ${url}.`);
+          console.warn(
+            `[webNavigation] Active style ID ${activeStyleId} found for ${url}, but style data missing.`
+          );
+          // TODO: Maybe clear the activeStyleId here?
         }
-      });
-    }
+      } else {
+        console.log(`[webNavigation] No active style found for ${url}`);
+        // REMOVE session flag logic for clearing
+        // const flagKey = `autoAppliedStylesTab${tabId}`;
+        // chrome.storage.session.remove(flagKey, () => {
+        //    // ...
+        // });
+      }
+    });
   },
   {
-    // Filter to only run on http and https URLs
+    // Filter for main frame navigation completion on http/https pages
     url: [{ schemes: ["http", "https"] }],
   }
 );

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Vibe Styler",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Change page styles using AI prompts.",
   "action": {
     "default_popup": "popup/popup.html",
